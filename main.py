@@ -1,8 +1,13 @@
 import json
 import os
 import requests
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import matplotlib.animation as animation
+import numpy as np
+import time
 
-DEV_API_KEY = "RGAPI-fbde16b2-99f8-4fd8-8ff2-f12060291a7c"
+DEV_API_KEY = "RGAPI-f0013a9b-12da-4790-8f50-34f6d64ea418"
 base_url = "https://kr.api.riotgames.com/"
 HEADER = {
     # "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36",
@@ -13,11 +18,17 @@ HEADER = {
 }
 json_path = "json/"
 
+data = []
+data_index = 0
+
+# y축에 표현할 값을 반환해야하고 scope 객체 선언 전 선언해야함.
+
 
 def ChamKey2Name(key):
 
     # LOL champions mapping data from github -> "https://github.com/ngryman/lol-champions"
-    champions_data = open(json_path + "champions.json", 'rt', encoding='UTF8')
+    champions_data = open(
+        json_path + "champions.json", 'rt', encoding='UTF8')
     champions_map = json.loads(champions_data.read())
     # print(champions_map)
 
@@ -32,7 +43,7 @@ def SUMMONER_V4_by_name(summonerName):
 
     header = HEADER
     result = json.loads(requests.get(full_url, headers=header).text)
-    print(result)
+    # print(result)
     return result['accountId']
 
 
@@ -44,11 +55,6 @@ def MATCH_V4_matchlists_by_account(encryptedAccountId):
     result = json.loads(requests.get(full_url, headers=header).text)
     # print(result)
     return result['matches'][0]['gameId']
-
-# 1607336238906 -> 1970년 1월 1일 1초로 부터 지난 ms
-# 1607333376437
-# 1607331169581
-# 2206856
 
 
 def MATCH_V4_matches_matchId(matchId):
@@ -85,7 +91,7 @@ def MATCH_V4_matches_matchId(matchId):
     # print("result")
     # print(result)
     f = open(json_path + "match_info.json", 'w')
-    json.dump(result, f)
+    json.dump(result, f, indent="\t")
     f.close()
 
 
@@ -97,13 +103,118 @@ def MATCH_V4_timelines_by_match(matchId):
     result = json.loads(requests.get(full_url, headers=header).text)
     print(result)
     f = open(json_path + "in-game_info.json", 'w')
-    json.dump(result, f)
+    json.dump(result, f, indent="\t")
     f.close()
+
+
+def DrawTrail():
+    img = mpimg.imread("minimap.jpg")
+    print(img)
+    plt.axis(option='auto')
+    plt.imshow(img)
+    plt.show()
+
+
+class Scope(object):
+
+    # 초기 설정
+    def __init__(self,
+                 ax, fn,
+                 xmax=10, ymax=10,
+                 xstart=0, ystart=0,
+                 title='Title', xlabel='X value', ylabel='Y value'):
+
+        self.xmax = xmax
+        self.xstart = xstart
+        self.ymax = ymax
+        self.ystart = ystart
+
+        # 그래프 설정
+        self.ax = ax
+        self.ax.set_xlim((self.xstart, self.xmax))
+        self.ax.set_ylim((self.ystart, self.ymax))
+        self.ax.set_title(title)
+        self.ax.set_xlabel(xlabel)
+        self.ax.set_ylabel(ylabel)
+
+        self.x = [0]
+        self.y = [0]
+        self.value = 0
+        self.fn = fn
+        a = 0
+        self.line, = ax.plot([], [], 'g')
+
+        self.ti = time.time()
+        print("초기화 완료")
+
+    # 그래프 설정
+    def update(self, item):
+
+        tempo = time.time()-self.ti
+        self.ti = time.time()
+
+        # 값 넣기
+        self.value = self.fn()
+        self.y.append(self.value[1]/7)
+        self.value = self.fn()
+        self.x.append(self.value[0]/7)
+        self.line.set_data(self.x, self.y)
+
+        # 화면에 나타낼 x축 범위 업데이트
+        # # 전체 x값중 반을 화면 옆으로 밀기
+        if self.x[-1] >= self.xstart + self.xmax:
+            self.xstart = self.xstart + self.xmax/2
+            self.ax.set_xlim(self.xstart, self.xstart + self.xmax)
+
+            self.ax.figure.canvas.draw()
+
+        return (self.line, )
+
+
+def insert_rand(scale):
+    value = np.random.rand(1)
+    return value[0]*scale
+
+
+def insert_element():
+    return data.pop(0)
+
+
+def init_plt(insert_fn, xstart=0, xmax=10, ystart=0, ymax=10):
+    fig, ax = plt.subplots()
+    ax.grid(True)
+
+    img = np.flipud(mpimg.imread("minimap.jpg"))
+
+    scope = Scope(ax, insert_fn, xstart=xstart,
+                  xmax=img.shape[1], ystart=ystart, ymax=img.shape[0])
+
+    ani = animation.FuncAnimation(fig, scope.update, interval=500, blit=True)
+
+    plt.imshow(img)
+    plt.show()
 
 
 if __name__ == "__main__":
     # print(ChamKey2Name(2))
-    accountId = SUMMONER_V4_by_name("Hide on bush")
-    # gameId = MATCH_V4_matchlists_by_account(accountId)
+    accountId = SUMMONER_V4_by_name("미북이")
+    gameId = MATCH_V4_matchlists_by_account(accountId)
     # MATCH_V4_matches_matchId(gameId)
-    # MATCH_V4_timelines_by_match(gameId)
+    MATCH_V4_timelines_by_match(gameId)
+    # DrawTrail()
+
+    f = open(json_path + "in-game_info.json", 'r')
+    timeline = json.load(f)
+
+    for item in timeline['frames']:
+
+        player1 = item['participantFrames']['2']
+        try:
+            x = player1['position']['x']
+            y = player1['position']['y']
+            data.append([x, y])
+        except KeyError:
+            pass
+
+    init_plt(insert_element, xstart=0, xmax=14000,
+             ystart=0, ymax=14000)
